@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mini Game — Collect All Coins</title>
+  <style>
+    :root{font-family:Inter, Arial;}
+    body{display:flex;gap:20px;align-items:flex-start;padding:20px;background:#0f172a;color:#e6eef8}
+    #game{background:#081029;padding:12px;border-radius:8px;box-shadow:0 8px 30px rgba(2,6,23,0.7)}
+    canvas{display:block;background:#0b1220;border:2px solid rgba(255,255,255,0.04)}
+    .info{max-width:360px}
+    h1{font-size:18px;margin:0 0 8px}
+    p{margin:6px 0 12px;font-size:14px;line-height:1.3}
+    .kbd{display:inline-block;padding:6px 8px;border-radius:6px;background:#0b1220;border:1px solid rgba(255,255,255,0.04)}
+    .status{margin-top:10px;font-weight:600}
+    button{margin-top:12px;padding:8px 10px;border-radius:8px;border:0;cursor:pointer;background:#0ea5a3;color:#032022}
+    footer{margin-top:18px;font-size:12px;color:#9fb0c8}
+    .overlay{position:fixed;left:0;top:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;background:rgba(1,2,6,0.6);color:#e6eef8;font-size:20px}
+    .panel{background:#04202a;padding:18px;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,0.6)}
+  </style>
+</head>
+<body>
+  <div id="game">
+    <canvas id="c" width="400" height="400"></canvas>
+  </div>
+  <div class="info">
+    <h1>Mini Game — Collect All Coins</h1>
+    <p>Controls: <span class="kbd">Arrow Keys</span> or <span class="kbd">W A S D</span>.<br>
+    Goal: collect all the coins and reach the exit. The map is fixed (not random).</p>
+    <div class="status" id="status">Coins: 0 / 0</div>
+    <button id="reset">Reset Game</button>
+    <footer>File: <strong>index.html</strong> — fully self-contained in one page.</footer>
+  </div>
+
+<script>
+// --- Configuration
+const TILE = 40; // tile size (canvas 400x400 with 10x10 grid)
+const ROWS = 10, COLS = 10;
+
+// 0 = floor, 1 = wall, 2 = coin, 3 = exit
+const MAP = [
+  1,1,1,1,1,1,1,1,1,1,
+  1,0,0,0,2,0,0,0,3,1,
+  1,0,1,0,1,0,1,0,0,1,
+  1,0,1,0,0,0,1,0,0,1,
+  1,0,1,1,1,0,1,1,0,1,
+  1,0,0,0,1,0,0,0,0,1,
+  1,0,1,0,1,1,1,0,1,1,
+  1,2,1,0,0,0,1,0,2,1,
+  1,0,0,0,1,0,0,0,0,1,
+  1,1,1,1,1,1,1,1,1,1
+];
+
+// Player start (tile coords)
+const PLAYER_START = {x:1, y:1};
+
+// --- State variables (declare first)
+let canvas, ctx, statusEl, resetBtn;
+let player, coinsTotal, coinsCollected, map;
+let keys = {};
+let lastTime = 0;
+let showWin = false;
+
+// --- Small helper functions (kept short)
+function idx(x,y){return y*COLS + x}
+function inBounds(x,y){return x>=0 && x<COLS && y>=0 && y<ROWS}
+
+// Reset and initialize map & state
+function init(){
+  // copy MAP to avoid mutating original template
+  map = MAP.slice();
+  coinsCollected = 0;
+  coinsTotal = 0;
+  for(let i=0;i<map.length;i++) if(map[i]===2) coinsTotal++;
+  player = {
+    x: PLAYER_START.x,
+    y: PLAYER_START.y,
+    // smooth position for animation
+    sx: PLAYER_START.x * TILE,
+    sy: PLAYER_START.y * TILE,
+    speed: 6 // pixels per frame
+  };
+  showWin = false;
+  updateStatus();
+}
+
+// Update status text
+function updateStatus(){
+  statusEl.textContent = `Coins: ${coinsCollected} / ${coinsTotal}`;
+}
+
+// Try to move player by dx,dy (tile-based)
+function tryMove(dx,dy){
+  if(showWin) return;
+  const nx = player.x + dx;
+  const ny = player.y + dy;
+  if(!inBounds(nx,ny)) return;
+  const cell = map[idx(nx,ny)];
+  if(cell===1) return; // wall
+  // move
+  player.x = nx; player.y = ny;
+  // collect coin
+  if(cell===2){
+    map[idx(nx,ny)] = 0;
+    coinsCollected++;
+    updateStatus();
+  }
+  // check exit
+  if(cell===3 && coinsCollected===coinsTotal){
+    showWin = true;
+  }
+}
+
+// Input handling (small wrapper)
+function setupInput(){
+  window.addEventListener('keydown', e=>{
+    keys[e.key] = true;
+    // prevent arrow keys from scrolling
+    if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+  });
+  window.addEventListener('keyup', e=>{ keys[e.key] = false; });
+}
+
+// Process keys into tile moves (one move per key press)
+let movedThisKey = false;
+function processInput(){
+  const up = keys['ArrowUp'] || keys['w'] || keys['W'];
+  const down = keys['ArrowDown'] || keys['s'] || keys['S'];
+  const left = keys['ArrowLeft'] || keys['a'] || keys['A'];
+  const right = keys['ArrowRight'] || keys['d'] || keys['D'];
+
+  // allow one move per key press
+  if((up||down||left||right) && !movedThisKey){
+    if(up) tryMove(0,-1);
+    else if(down) tryMove(0,1);
+    else if(left) tryMove(-1,0);
+    else if(right) tryMove(1,0);
+    movedThisKey = true;
+  }
+  if(!up && !down && !left && !right) movedThisKey = false;
+}
+
+// Draw a single tile (kept short)
+function drawTile(x,y){
+  const v = map[idx(x,y)];
+  const px = x*TILE, py = y*TILE;
+  // floor
+  ctx.fillStyle = '#071022';
+  ctx.fillRect(px,py,TILE,TILE);
+  // walls
+  if(v===1){ ctx.fillStyle = '#23404e'; ctx.fillRect(px+2,py+2,TILE-4,TILE-4); }
+  // coins
+  if(v===2){
+    ctx.beginPath();
+    ctx.fillStyle = '#f3c44f';
+    ctx.arc(px+TILE/2, py+TILE/2, TILE*0.18, 0, Math.PI*2);
+    ctx.fill();
+    ctx.closePath();
+  }
+  // exit
+  if(v===3){
+    ctx.fillStyle = '#0ea5a3';
+    ctx.fillRect(px+6, py+6, TILE-12, TILE-12);
+    ctx.fillStyle='#032022'; ctx.font='14px Arial'; ctx.textAlign='center';
+    ctx.fillText('EXIT', px+TILE/2, py+TILE/2+5);
+  }
+  // grid subtle lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.02)';
+  ctx.strokeRect(px,py,TILE,TILE);
+}
+
+// Draw everything
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++) drawTile(x,y);
+
+  // player smooth position approach
+  const targetX = player.x * TILE;
+  const targetY = player.y * TILE;
+  const dx = targetX - player.sx;
+  const dy = targetY - player.sy;
+  // lerp by speed factor
+  player.sx += Math.sign(dx) * Math.min(Math.abs(dx), player.speed);
+  player.sy += Math.sign(dy) * Math.min(Math.abs(dy), player.speed);
+
+  // draw player
+  ctx.beginPath();
+  ctx.fillStyle = '#dbeafe';
+  ctx.arc(player.sx + TILE/2, player.sy + TILE/2, TILE*0.32, 0, Math.PI*2);
+  ctx.fill();
+  ctx.closePath();
+
+  // draw coin count in canvas corner
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.fillRect(6,6,110,26);
+  ctx.fillStyle = '#e6eef8'; ctx.font='14px Arial'; ctx.textAlign='left';
+  ctx.fillText(`Coins: ${coinsCollected}/${coinsTotal}`, 12, 24);
+
+  // win overlay
+  if(showWin){
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = '#e6eef8'; ctx.font='26px Arial'; ctx.textAlign='center';
+    ctx.fillText('You Win!', canvas.width/2, canvas.height/2 - 8);
+    ctx.font='14px Arial'; ctx.fillText('Press Reset to play again', canvas.width/2, canvas.height/2 + 18);
+  }
+}
+
+// Game loop
+function loop(ts){
+  const delta = ts - lastTime; lastTime = ts;
+  processInput();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// Setup and start
+function start(){
+  canvas = document.getElementById('c');
+  ctx = canvas.getContext('2d');
+  statusEl = document.getElementById('status');
+  resetBtn = document.getElementById('reset');
+  resetBtn.addEventListener('click', ()=>{ init(); });
+  setupInput();
+  init();
+  requestAnimationFrame(loop);
+}
+
+start();
+</script>
+</body>
+</html>
